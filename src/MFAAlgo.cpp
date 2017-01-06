@@ -71,15 +71,7 @@ mfaAlgo (Graph &graph1, List<Cluster> &DRTrees, std::ostream &file1,
      file1<<"DRTree "<<i<<std::endl;
      printTree(DRTrees.retrieve(i), file1, 1);
   }
-  file1<<"---------------------------------------------"<<std::endl;
-  std::cout<<std::endl<<numTrees<<" Final DR output Trees"<<std::endl;
-  for(i=1;i<=numTrees;i++)
-  {
-     std::cout<<"---------"<<std::endl;
-     std::cout<<"DRTree "<<i<<std::endl;
-     printTree(DRTrees.retrieve(i), std::cout, 1);
-  }
-  std::cout<<"---------------------------------------------"<<std::endl;
+  file1<<"---------------------------------------------"<<std::endl; 
   return DRTrees;
 }
 
