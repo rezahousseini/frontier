@@ -1,99 +1,73 @@
 import graph_tool.all as gt
+from itertools import chain
 import pudb
 
 def augment(graph, vertex, flow, flows, pred):
   edge = pred[vertex]
   while edge is not None:
-    flows[graph.edge(edge,vertex)] += flow
+    flows[(edge,vertex)] += flow
     vertex = pred[edge]
     if vertex == None:
       return
     else:
-      flows[graph.edge(edge,vertex)] -= flow
+      flows[(edge,vertex)] -= flow
       edge = pred[vertex]
 
 def scan_edges(graph, label, scan, pred, pathcap):
-  for e in [ed for ed in graph.vertices() if graph.vp.isedge[ed]
-            and label[ed] and not scan[ed]]:
-    for v in [ve for ve in e.out_neighbours() if not label[ve]]:
+  for e in [ed for ed in graph.edges() if label[ed] and not scan[ed]]:
+    for v in [ve for ve in [e.source(), e.target()] if not label[ve]]:
       label[v] = True
       pred[v] = e
       pathcap[v] = pathcap[e]
     scan[e] = True
 
 def scan_nodes(graph, label, scan, pred, pathcap, flows, edge):
-  for v in [ve for ve in graph.vertices() if not graph.vp.isedge[ve]
-            and label[ve] and not scan[ve]]:
-    flow = sum([flows[ed] for ed in v.in_edges()])
+  for v in [ve for ve in graph.vertices() if label[ve] and not scan[ve]]:
+    flow = sum([flows[(ed,v)] for ed in v.all_edges()])
     node_flow = min(graph.vp.weight[v] - flow, pathcap[v])
     if flow < graph.vp.weight[v]:
       augment(graph, v, node_flow, flows, pred)
       pathcap[edge] -= node_flow
-      label.set_value(False)
+      label = {v: False for v in label}
       label[edge] = True
-      scan.set_value(False)
+      scan = {v: False for v in scan}
       return
     else:
-      for e in [ed for ed in v.in_neighbours() if not label[ed]]:
-        if flows[graph.edge(e,v)] > 0:
+      for e in [ed for ed in v.all_edges() if not label[ed]]:
+        if flows[(e,v)] > 0:
           label[e] = True
           pred[e] = v
-          pathcap[e] = min(pathcap[v], flows[graph.edge(e,v)])
+          pathcap[e] = min(pathcap[v], flows[(e,v)])
     scan[v] = True
 
 def distribute(graph, flows, edge):
-  pathcap = {vertex: None for vertex in graph.vertices()}
-  pred = {vertex: None for vertex in graph.vertices()}
-  pathcap[edge] = graph.vp.weight[edge]
-  label = graph.new_vertex_property("bool", val=False)
-  scan = graph.new_vertex_property("bool", val=False)
+  vertices = list(chain(graph.vertices(), graph.edges()))
+  pathcap = {vertex: None for vertex in vertices}
+  pred = {vertex: None for vertex in vertices}
+  label = {vertex: False for vertex in vertices}
+  scan = {vertex: False for vertex in vertices}
+  pathcap[edge] = graph.ep.weight[edge]
   label[edge] = True
 
-  while pathcap[edge] > 0 and any([label[v] and not scan[v] for v in
-                                   graph.vertices()]):
+  while pathcap[edge] > 0 and any([label[v] and not scan[v] for v in vertices]):
     scan_edges(graph, label, scan, pred, pathcap)
     scan_nodes(graph, label, scan, pred, pathcap, flows, edge)
-  return [v for v in graph.vertices() if not graph.vp.isedge[v] and
-          label[v]], pathcap[edge] <= 0
+  return [v for v in graph.vertices() if label[v]], pathcap[edge] <= 0
 
 def dense(graph):
   graph_ = set()
-  graph_bi, edge_to_vertex = get_bipartite(graph)
-  flows = {edge: 0 for edge in graph_bi.edges()}
+  f1 = lambda e: (e,e.source())
+  f2 = lambda e: (e,e.target())
+  flows = {f(e): 0 for e in graph.edges() for f in (f1,f2)}
   for v in graph.vertices():
     for e in [graph.edge(v, u) for u in set(v.out_neighbours()) & graph_]:
-      label,success = distribute(graph_bi, flows, edge_to_vertex[e])
-      printflows(flows)
-      print('\n')
+      label,success = distribute(graph, flows, e)
+      #printflows(flows)
+      #print('\n')
       if not success:
-        issubgraph = graph.new_vertex_property("bool", val=False)
-        for v in label:
-          issubgraph[graph_bi.vp.origin[v]] = True
-        return gt.GraphView(graph, vfilt=issubgraph)
+        return label
     graph_.add(v)
-  return gt.GraphView(graph, vfilt=label)
-
-def get_bipartite(graph):
-  graph_bi = gt.Graph()
-  graph_bi.vp.weight = graph_bi.new_vertex_property("int")
-  graph_bi.vp.origin = graph_bi.new_vertex_property("object")
-  graph_bi.vp.isedge = graph_bi.new_vertex_property("bool", val=False)
-  for v in graph.vertices():
-    vc = graph_bi.add_vertex()
-    graph_bi.vp.origin[vc] = v
-  graph.copy_property(graph.vp.weight, graph_bi.vp.weight)
-  edge_to_vertex = graph.new_edge_property("object")
-  for e in graph.edges():
-    vs = e.source()
-    vt = e.target()
-    v = graph_bi.add_vertex()
-    graph_bi.vp.weight[v] = graph.ep.weight[e]
-    graph_bi.vp.origin[v] = e
-    graph_bi.vp.isedge[v] = True
-    edge_to_vertex[e] = v
-    et = graph_bi.add_edge(v, vt)
-    es = graph_bi.add_edge(v, vs)
-  return graph_bi, edge_to_vertex
+  return label
 
 def printflows(flows):
   print('flows:')
@@ -213,5 +187,5 @@ S2 = dense(G2)
 #d1 = density(G1)
 #d2 = density(G2)
 
-gt.graph_draw(S2, vertex_text=S2.vertex_index, vertex_font_size=18,
-              output_size=(200, 200), output="S2.pdf")
+#gt.graph_draw(S2, vertex_text=S2.vertex_index, vertex_font_size=18,
+#              output_size=(200, 200), output="S2.pdf")
